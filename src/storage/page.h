@@ -15,7 +15,8 @@ See the Mulan PSL v2 for more details. */
 /**
  * @description: 存储层每个Page的id的声明
  */
-struct PageId {
+struct PageId 
+{
     int fd;  //  Page所在的磁盘文件开启后的文件描述符, 来定位打开的文件在内存中的位置
     page_id_t page_no = INVALID_PAGE_ID;
 
@@ -35,12 +36,14 @@ struct PageId {
 };
 
 // PageId的自定义哈希算法, 用于构建unordered_map<PageId, frame_id_t, PageIdHash>
-struct PageIdHash {
+struct PageIdHash 
+{
     size_t operator()(const PageId &x) const { return (x.fd << 16) | x.page_no; }
 };
 
 template <>
-struct std::hash<PageId> {
+struct std::hash<PageId> 
+{
     size_t operator()(const PageId &obj) const { return std::hash<int64_t>()(obj.Get()); }
 };
 
@@ -48,7 +51,8 @@ struct std::hash<PageId> {
  * @description: Page类声明, Page是RMDB数据块的单位、是负责数据操作Record模块的操作对象，
  * Page对象在磁盘上有文件存储, 若在Buffer中则有帧偏移, 并非特指Buffer或Disk上的数据
  */
-class Page {
+class Page 
+{
     friend class BufferPoolManager;
 
    public:
