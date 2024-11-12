@@ -121,7 +121,7 @@ void DiskManager::create_file(const std::string &path) {
     if (fd == -1) {
         throw FileExistsError("File already exists or cannot be created");
     }
-    close(fd);
+    close(fd); 
 }
 
 /**
@@ -134,14 +134,14 @@ void DiskManager::destroy_file(const std::string &path) {
     // 注意不能删除未关闭的文件
 
     struct stat stat_buf;
-    if (stat(path.c_str(), &stat_buf) != 0) {
+    if (stat(path.c_str(), &stat_buf) != 0) { // 文件不存在
         throw FileNotFoundError("File does not exist: " + path);
     }
 
-    if (path2fd_.count(path)) {
+    if (path2fd_.count(path)) { // 文件已经打开
         throw FileNotClosedError(path);
     }
-    if (unlink(path.c_str()) == -1) {
+    if (unlink(path.c_str()) == -1) { // 删除文件
         throw InternalError("destroy_file Error");
     }
 }
@@ -151,14 +151,15 @@ void DiskManager::destroy_file(const std::string &path) {
  * @return {int} 返回打开的文件的文件句柄
  * @param {string} &path 文件所在路径
  */
-int DiskManager::open_file(const std::string &path) {
+int DiskManager::open_file(const std::string &path) 
+{
     // Todo:
     // 调用open()函数，使用O_RDWR模式
     // 注意不能重复打开相同文件，并且需要更新文件打开列表
 
-    // Check if the file is already open
+    // 如果文件已经打开，则直接返回文件句柄
     if (path2fd_.count(path)) {
-        // throw FileExistsError(path);
+        // 文件已经打开
         return path2fd_[path];
     }
     int fd = open(path.c_str(), O_RDWR);

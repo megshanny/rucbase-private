@@ -257,7 +257,8 @@ class BufferPoolManager {
 `RMFileHandle`类的接口如下：
 
 ```cpp
-class RmFileHandle {
+class RmFileHandle 
+{
    public:
     RmFileHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd);
     // 不考虑事务的记录操作（事务将在后续实验使用）

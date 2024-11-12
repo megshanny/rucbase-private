@@ -17,8 +17,7 @@ See the Mulan PSL v2 for more details. */
  * @return {unique_ptr<RmRecord>} rid对应的记录对象指针
  */
 std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* context) const {
-    // 创建一个指向 RmRecord 的智能指针，并初始化其大小
-    auto record = std::make_unique<RmRecord>(file_hdr_.record_size);
+    
     
     // 获取包含指定记录的页面句柄
     RmPageHandle temp = fetch_page_handle(rid.page_no);
@@ -30,6 +29,7 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
     
     // 将记录数据从页面槽位复制到 record 对象
     char *slot = temp.get_slot(rid.slot_no);
+    auto record = std::make_unique<RmRecord>(file_hdr_.record_size);
     memcpy(record->data, slot, file_hdr_.record_size);
     
     // 设置记录大小并返回记录指针
