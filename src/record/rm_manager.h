@@ -81,4 +81,5 @@ class RmManager {
         buffer_pool_manager_->flush_all_pages(file_handle->fd_);
         disk_manager_->close_file(file_handle->fd_);
     }
+    
 };
