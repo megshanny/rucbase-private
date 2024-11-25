@@ -36,7 +36,8 @@ inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
     }
 }
 
-inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& col_types, const std::vector<int>& col_lens) {
+inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& col_types, const std::vector<int>& col_lens) 
+{
     int offset = 0;
     for(size_t i = 0; i < col_types.size(); ++i) {
         int res = ix_compare(a + offset, b + offset, col_types[i], col_lens[i]);
