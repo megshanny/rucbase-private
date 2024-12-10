@@ -681,10 +681,10 @@ bool IxIndexHandle::coalesce(IxNodeHandle **neighbor_node, IxNodeHandle **node, 
  */
 Rid IxIndexHandle::get_rid(const Iid &iid) const 
 {
-    IxNodeHandle *node = fetch_node(iid.page_no);
-    if (iid.slot_no >= node->get_size()) 
+    IxNodeHandle *node = fetch_node(iid.page_no); // 获取对应的结点
+    if (iid.slot_no >= node->get_size()) // 如果slot_no超出了结点的范围
     {
-        throw IndexEntryNotFoundError();
+        throw IndexEntryNotFoundError(); // 抛出异常
     }
     buffer_pool_manager_->unpin_page(node->get_page_id(), false);  // unpin it!
     return *node->get_rid(iid.slot_no);
@@ -699,17 +699,17 @@ Rid IxIndexHandle::get_rid(const Iid &iid) const
  * 可用*(int *)key转换回去
  */
 Iid IxIndexHandle::lower_bound(const char *key) {
-    std::scoped_lock lock{root_latch_};
-    IxNodeHandle *node = find_leaf_page(key, Operation::FIND, nullptr, true).first;
-    int key_idx = node->lower_bound(key);
+    std::scoped_lock lock{root_latch_}; // 上锁 
+    IxNodeHandle *node = find_leaf_page(key, Operation::FIND, nullptr, true).first; // 查找叶子结点
+    int key_idx = node->lower_bound(key); // 查找key的下界
     Iid iid;
-    if (key_idx == node->get_size()) {
-        iid = leaf_end();
+    if (key_idx == node->get_size()) { // 如果key_idx等于结点的大小
+        iid = leaf_end(); // 返回叶子的最后一个结点的后一个
     } else {
-        iid = {.page_no = node->get_page_no(), .slot_no = key_idx};
+        iid = {.page_no = node->get_page_no(), .slot_no = key_idx}; // 返回找到的索引槽
     }
-    buffer_pool_manager_->unpin_page(node->get_page_id(), false);
-    return iid;
+    buffer_pool_manager_->unpin_page(node->get_page_id(), false); // 释放叶子结点
+    return iid; // 返回iid
 }
 
 /**
@@ -720,13 +720,13 @@ Iid IxIndexHandle::lower_bound(const char *key) {
  */
 Iid IxIndexHandle::upper_bound(const char *key) {
     std::scoped_lock lock{root_latch_};
-    IxNodeHandle *node = find_leaf_page(key, Operation::FIND, nullptr, true).first;
-    int key_idx = node->upper_bound(key);
-    Iid iid;
-    if (key_idx == node->get_size()) {
-        iid = leaf_end();
-    } else {
-        iid = {.page_no = node->get_page_no(), .slot_no = key_idx};
+    IxNodeHandle *node = find_leaf_page(key, Operation::FIND, nullptr, true).first; // 查找叶子结点
+    int key_idx = node->upper_bound(key); // 查找key的上界
+    Iid iid; 
+    if (key_idx == node->get_size()) { // 如果key_idx等于结点的大小
+        iid = leaf_end(); // 返回叶子的最后一个结点的后一个
+    } else { 
+        iid = {.page_no = node->get_page_no(), .slot_no = key_idx}; // 返回找到的索引槽
     }
     buffer_pool_manager_->unpin_page(node->get_page_id(), false);
     return iid;
@@ -739,8 +739,8 @@ Iid IxIndexHandle::upper_bound(const char *key) {
  * @return Iid
  */
 Iid IxIndexHandle::leaf_end() const {
-    IxNodeHandle *node = fetch_node(file_hdr_->last_leaf_);
-    Iid iid = {.page_no = file_hdr_->last_leaf_, .slot_no = node->get_size()};
+    IxNodeHandle *node = fetch_node(file_hdr_->last_leaf_); // 获取最后一个叶子结点
+    Iid iid = {.page_no = file_hdr_->last_leaf_, .slot_no = node->get_size()}; // 返回最后一个叶子结点的后一个
     buffer_pool_manager_->unpin_page(node->get_page_id(), false);  // unpin it!
     return iid;
 }
@@ -752,7 +752,7 @@ Iid IxIndexHandle::leaf_end() const {
  * @return Iid
  */
 Iid IxIndexHandle::leaf_begin() const {
-    Iid iid = {.page_no = file_hdr_->first_leaf_, .slot_no = 0};
+    Iid iid = {.page_no = file_hdr_->first_leaf_, .slot_no = 0}; // 返回第一个叶子结点的第一个
     return iid;
 }
 
@@ -764,10 +764,10 @@ Iid IxIndexHandle::leaf_begin() const {
  * @note pin the page, remember to unpin it outside!
  */
 IxNodeHandle *IxIndexHandle::fetch_node(int page_no) const {
-    Page *page = buffer_pool_manager_->fetch_page(PageId{fd_, page_no});
-    IxNodeHandle *node = new IxNodeHandle(file_hdr_, page);
+    Page *page = buffer_pool_manager_->fetch_page(PageId{fd_, page_no}); // 获取指定结点
+    IxNodeHandle *node = new IxNodeHandle(file_hdr_, page); // 创建一个新的结点
     
-    return node;
+    return node; // 返回结点
 }
 
 /**
@@ -781,13 +781,13 @@ IxNodeHandle *IxIndexHandle::fetch_node(int page_no) const {
  * 与Record的处理不同，Record将未插入满的记录页认为是free_page
  */
 IxNodeHandle *IxIndexHandle::create_node() {
-    IxNodeHandle *node;
-    file_hdr_->num_pages_++;
+    IxNodeHandle *node; // 创建一个新结点
+    file_hdr_->num_pages_++;    // 更新file_hdr_.num_pages
 
-    PageId new_page_id = {.fd = fd_, .page_no = INVALID_PAGE_ID};
+    PageId new_page_id = {.fd = fd_, .page_no = INVALID_PAGE_ID};  // 创建一个新的page_id
     // 从3开始分配page_no，第一次分配之后，new_page_id.page_no=3，file_hdr_.num_pages=4
-    Page *page = buffer_pool_manager_->new_page(&new_page_id);
-    node = new IxNodeHandle(file_hdr_, page);
+    Page *page = buffer_pool_manager_->new_page(&new_page_id); // 从buffer pool manager中分配一个新的页面
+    node = new IxNodeHandle(file_hdr_, page); // 创建一个新的结点
     return node;
 }
 
@@ -797,21 +797,21 @@ IxNodeHandle *IxIndexHandle::create_node() {
  * @param node
  */
 void IxIndexHandle::maintain_parent(IxNodeHandle *node) {
-    IxNodeHandle *curr = node;
-    while (curr->get_parent_page_no() != IX_NO_PAGE) {
+    IxNodeHandle *curr = node; // 从当前结点开始
+    while (curr->get_parent_page_no() != IX_NO_PAGE) { // 如果当前结点的父节点不是根节点
         // Load its parent
-        IxNodeHandle *parent = fetch_node(curr->get_parent_page_no());
-        int rank = parent->find_child(curr);
-        char *parent_key = parent->get_key(rank);
-        char *child_first_key = curr->get_key(0);
-        if (memcmp(parent_key, child_first_key, file_hdr_->col_tot_len_) == 0) {
-            assert(buffer_pool_manager_->unpin_page(parent->get_page_id(), true));
+        IxNodeHandle *parent = fetch_node(curr->get_parent_page_no());  // 获取父节点
+        int rank = parent->find_child(curr);                     // 在父节点中找到当前结点的位置
+        char *parent_key = parent->get_key(rank);               // 获取父节点的键值
+        char *child_first_key = curr->get_key(0);              // 获取当前结点的第一个键值
+        if (memcmp(parent_key, child_first_key, file_hdr_->col_tot_len_) == 0) { // 如果父节点的键值等于当前结点的第一个键值
+            assert(buffer_pool_manager_->unpin_page(parent->get_page_id(), true)); // 释放父节点
             break;
         }
         memcpy(parent_key, child_first_key, file_hdr_->col_tot_len_);  // 修改了parent node
-        curr = parent;
+        curr = parent; // 更新当前结点
 
-        assert(buffer_pool_manager_->unpin_page(parent->get_page_id(), true));
+        assert(buffer_pool_manager_->unpin_page(parent->get_page_id(), true)); // 释放父节点
     }
 }
 
@@ -821,15 +821,15 @@ void IxIndexHandle::maintain_parent(IxNodeHandle *node) {
  * @param leaf 要删除的leaf
  */
 void IxIndexHandle::erase_leaf(IxNodeHandle *leaf) {
-    assert(leaf->is_leaf_page());
+    assert(leaf->is_leaf_page()); // 确保是叶子结点
 
-    IxNodeHandle *prev = fetch_node(leaf->get_prev_leaf());
-    prev->set_next_leaf(leaf->get_next_leaf());
-    buffer_pool_manager_->unpin_page(prev->get_page_id(), true);
+    IxNodeHandle *prev = fetch_node(leaf->get_prev_leaf()); // 获取前一个叶子结点
+    prev->set_next_leaf(leaf->get_next_leaf()); // 注意此处是SetNextLeaf()
+    buffer_pool_manager_->unpin_page(prev->get_page_id(), true); // 释放前一个叶子结点
 
-    IxNodeHandle *next = fetch_node(leaf->get_next_leaf());
+    IxNodeHandle *next = fetch_node(leaf->get_next_leaf()); // 获取后一个叶子结点
     next->set_prev_leaf(leaf->get_prev_leaf());  // 注意此处是SetPrevLeaf()
-    buffer_pool_manager_->unpin_page(next->get_page_id(), true);
+    buffer_pool_manager_->unpin_page(next->get_page_id(), true); // 释放后一个叶子结点
 }
 
 /**
@@ -845,11 +845,11 @@ void IxIndexHandle::release_node_handle(IxNodeHandle &node) {
  * @brief 将node的第child_idx个孩子结点的父节点置为node
  */
 void IxIndexHandle::maintain_child(IxNodeHandle *node, int child_idx) {
-    if (!node->is_leaf_page()) {
+    if (!node->is_leaf_page()) { 
         //  Current node is inner node, load its child and set its parent to current node
-        int child_page_no = node->value_at(child_idx);
-        IxNodeHandle *child = fetch_node(child_page_no);
-        child->set_parent_page_no(node->get_page_no());
-        buffer_pool_manager_->unpin_page(child->get_page_id(), true);
+        int child_page_no = node->value_at(child_idx); // 获取孩子结点的page_no
+        IxNodeHandle *child = fetch_node(child_page_no); // 获取孩子结点
+        child->set_parent_page_no(node->get_page_no()); // 设置孩子结点的父节点为当前结点
+        buffer_pool_manager_->unpin_page(child->get_page_id(), true); // 释放孩子结点
     }
 }
