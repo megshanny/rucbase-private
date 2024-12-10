@@ -199,22 +199,49 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
  */
 void SmManager::create_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) 
 {
+    // 1. 获取表的元数据
+    // 从数据库中获取指定表的元数据对象（tab_meta），以便后续操作
     auto& tab_meta = db_.get_table(tab_name);
-    IndexMeta index_meta = {tab_name};
-    std::vector<ColMeta> &col_meta = index_meta.cols;
+
+    // 2. 创建并初始化索引元数据对象
+    // 索引元数据对象 (index_meta) 包含了关于索引的基本信息
+    IndexMeta index_meta = {tab_name};  // 初始化索引元数据，设置表名
+
+    // 3. 获取列的元数据并计算索引相关信息
+    // col_meta 是一个存储列元数据的 vector，index_meta.cols 存储了所有索引列的信息
+    std::vector<ColMeta>& col_meta = index_meta.cols;
     for (auto& col : col_names) {
+        // 通过表的元数据对象获取指定列的元数据
         auto it = tab_meta.get_col(col);
+        
+        // 将列的元数据添加到索引元数据的列列表中
         col_meta.push_back(*it);
+        
+        // 更新索引元数据：计算列的总长度和列的数量
         index_meta.col_tot_len += it->len;
-        index_meta.col_num ++ ;
+        index_meta.col_num++;
     }
-    if (context && !context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name)))
+
+    // 4. 锁定表，确保操作的独占性
+    // 如果 context 存在，且无法对表进行独占锁定，抛出异常
+    if (context && !context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name))) {
+        // 事务无法获得锁，抛出事务中止异常
         throw TransactionAbortException(context->txn_->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING);
+    }
+
+    // 5. 调用索引管理器创建索引
+    // 使用索引管理器创建索引并将相关列元数据传递给它
     ix_manager_->create_index(tab_name, col_meta);
+
+    // 6. 更新表的索引列表
+    // 将创建的索引元数据添加到表的索引列表中
     tab_meta.indexes.push_back(index_meta);
-    ihs_[ix_manager_->get_index_name(tab_name, col_meta)]
-        = ix_manager_->open_index(tab_name, col_meta);
+
+    // 7. 将索引句柄保存在索引句柄映射表中
+    // 打开并获取该索引的句柄，然后将其存入索引句柄映射表（ihs_）
+    ihs_[ix_manager_->get_index_name(tab_name, col_meta)] = ix_manager_->open_index(tab_name, col_meta);
 }
+
 
 /**
  * @description: 删除索引
