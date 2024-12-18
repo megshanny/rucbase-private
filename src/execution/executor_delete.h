@@ -36,7 +36,33 @@ class DeleteExecutor : public AbstractExecutor {
         context_ = context;
     }
 
-    std::unique_ptr<RmRecord> Next() override {
+    std::unique_ptr<RmRecord> Next() override 
+    {
+        for (Rid &rid : rids_) 
+        {
+            auto rec = fh_->get_record(rid, context_); // 获取记录
+            // 删除索引
+            for (size_t i = 0; i < tab_.indexes.size(); ++i) 
+            {
+                auto &index = tab_.indexes[i]; // 索引
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(); // 索引句柄
+                
+                //构造索引键
+                char *key = new char[index.col_tot_len];
+                int offset = 0;
+                for (int j = 0; j < index.col_num; ++j)  // 拼接每一列的值
+                {
+                    memcpy(key + offset, rec->data + index.cols[j].offset, index.cols[j].len);
+                    offset += index.cols[j].len; 
+                }
+                ih->delete_entry(key, context_->txn_); // 删除索引
+            }
+            // 删除记录
+            fh_->delete_record(rid, context_);
+            // 添加到write record
+            WriteRecord *wr = new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, *rec);
+            context_->txn_->append_write_record(wr);
+        }
         return nullptr;
     }
 
