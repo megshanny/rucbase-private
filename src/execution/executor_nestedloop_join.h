@@ -17,17 +17,17 @@ See the Mulan PSL v2 for more details. */
 
 class NestedLoopJoinExecutor : public AbstractExecutor {
    private:
-    std::unique_ptr<AbstractExecutor> left_;    // 左儿子节点（需要join的表）
-    std::unique_ptr<AbstractExecutor> right_;   // 右儿子节点（需要join的表）
-    size_t len_;                                // join后获得的每条记录的长度
-    std::vector<ColMeta> cols_;                 // join后获得的记录的字段
+    std::unique_ptr<AbstractExecutor> left_;   // 左儿子节点（需要join的表）
+    std::unique_ptr<AbstractExecutor> right_;  // 右儿子节点（需要join的表）
+    size_t len_;                               // join后获得的每条记录的长度
+    std::vector<ColMeta> cols_;                // join后获得的记录的字段
 
-    std::vector<Condition> fed_conds_;          // join条件
+    std::vector<Condition> fed_conds_;  // join条件
     bool isend;
 
    public:
-    NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right, 
-                            std::vector<Condition> conds) {
+    NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right,
+                           std::vector<Condition> conds) {
         left_ = std::move(left);
         right_ = std::move(right);
         len_ = left_->tupleLen() + right_->tupleLen();
@@ -40,91 +40,45 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
         cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
         isend = false;
         fed_conds_ = std::move(conds);
-
     }
 
-    void beginTuple() override 
-    {
+    void beginTuple() override {
         left_->beginTuple();
         right_->beginTuple();
     }
 
-    void nextTuple() override 
-    {
-        assert(!is_end());
-        right_->nextTuple();
-        if (right_->is_end()) 
-        {
-            left_->nextTuple();
-            right_->beginTuple();
-        }
-        while (!is_end()) 
-        {
-            if (eval_conds(cols_, fed_conds_, left_->Next().get(), right_->Next().get())) {
-                break;
-            }
-            right_->nextTuple();
-            if (right_->is_end()) {
+    void nextTuple() override {
+        for (; !right_->is_end(); right_->nextTuple()) {
+            if (left_->is_end())
+                left_->beginTuple();
+            else
                 left_->nextTuple();
-                right_->beginTuple();
+
+            for (; !left_->is_end(); left_->nextTuple()) {
+                if (condCheck(get_rec().get(), fed_conds_, cols_)) return;
             }
         }
     }
 
+    std::unique_ptr<RmRecord> Next() override { return get_rec(); }
+
+    Rid &rid() override { return _abstract_rid; }
+
     bool is_end() const override { return left_->is_end(); }
-    size_t tupleLen() const override { return len_; }
-    const std::vector<ColMeta> &cols() const override { return cols_; }
 
+    std::unique_ptr<RmRecord> get_rec() {
+        std::unique_ptr<RmRecord> record = std::make_unique<RmRecord>(len_);
+        std::unique_ptr<RmRecord> l_rec = left_->Next();
+        std::unique_ptr<RmRecord> r_rec = right_->Next();
+        // 组合成一条record
+        memset(record->data, 0, record->size);
+        memcpy(record->data, l_rec->data, l_rec->size);
+        memcpy(record->data + l_rec->size, r_rec->data, r_rec->size);
 
-    std::unique_ptr<RmRecord> Next() override {
-        assert(!is_end());
-        auto record = std::make_unique<RmRecord>(len_);
-        auto left_record = left_->Next();
-        auto right_record = right_->Next();
-        memcpy(record->data, left_record->data, left_record->size);
-        memcpy(record->data + left_record->size, right_record->data, right_record->size);
         return record;
     }
 
-    bool eval_cond(const std::vector<ColMeta> &rec_cols, const Condition &cond, const RmRecord *lrec,
-                   const RmRecord *rrec) {
-        auto lhs_col = get_col(rec_cols, cond.lhs_col);
-        char *lhs = lrec->data + lhs_col->offset;
-        char *rhs;
-        ColType rhs_type;
-        if (cond.is_rhs_val) {
-            rhs_type = cond.rhs_val.type;
-            rhs = cond.rhs_val.raw->data;
-        } else {
-            // rhs is a column
-            auto rhs_col = get_col(rec_cols, cond.rhs_col);
-            rhs_type = rhs_col->type;
-            rhs = rrec->data + rhs_col->offset - left_->tupleLen();
-        }
-        assert(rhs_type == lhs_col->type);
-        int cmp = ix_compare(lhs, rhs, rhs_type, lhs_col->len);
-        if (cond.op == OP_EQ) {
-            return cmp == 0;
-        } else if (cond.op == OP_NE) {
-            return cmp != 0;
-        } else if (cond.op == OP_LT) {
-            return cmp < 0;
-        } else if (cond.op == OP_GT) {
-            return cmp > 0;
-        } else if (cond.op == OP_LE) {
-            return cmp <= 0;
-        } else if (cond.op == OP_GE) {
-            return cmp >= 0;
-        } else {
-            throw InternalError("Unexpected op type");
-        }
-    }
-
-    bool eval_conds(const std::vector<ColMeta> &rec_cols, const std::vector<Condition> &conds, const RmRecord *lrec,
-                    const RmRecord *rrec) {
-        return std::all_of(conds.begin(), conds.end(),
-                           [&](const Condition &cond) { return eval_cond(rec_cols, cond, lrec, rrec); });
-    }
-
-    Rid &rid() override { return _abstract_rid; }
+    size_t tupleLen() const override { return len_; };
+    std::string getType() override { return "NestedLoopJoinExecutor"; };
+    const std::vector<ColMeta> &cols() const override { return cols_; };
 };

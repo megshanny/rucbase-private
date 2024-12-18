@@ -36,35 +36,25 @@ class DeleteExecutor : public AbstractExecutor {
         context_ = context;
     }
 
-    std::unique_ptr<RmRecord> Next() override 
-    {
-        for (Rid &rid : rids_) 
-        {
-            auto rec = fh_->get_record(rid, context_); // 获取记录
-            // 删除索引
-            for (size_t i = 0; i < tab_.indexes.size(); ++i) 
-            {
-                auto &index = tab_.indexes[i]; // 索引
-                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get(); // 索引句柄
-                
-                //构造索引键
-                char *key = new char[index.col_tot_len];
-                int offset = 0;
-                for (int j = 0; j < index.col_num; ++j)  // 拼接每一列的值
-                {
-                    memcpy(key + offset, rec->data + index.cols[j].offset, index.cols[j].len);
-                    offset += index.cols[j].len; 
-                }
-                ih->delete_entry(key, context_->txn_); // 删除索引
+    std::unique_ptr<RmRecord> Next() override {
+        for (Rid rid : rids_) // 扫描记录
+        {          
+            if (!fh_->is_record(rid)) // 无记录扫描下一条
+            {  
+                continue;
             }
-            // 删除记录
+
+            if (!condCheck(fh_->get_record(rid, context_).get(), conds_, tab_.cols)) {  // 记录检查是否符合where语句
+                continue;
+            }
+
+            // 智能指针不能转换为普通指针
             fh_->delete_record(rid, context_);
-            // 添加到write record
-            WriteRecord *wr = new WriteRecord(WType::DELETE_TUPLE, tab_name_, rid, *rec);
-            context_->txn_->append_write_record(wr);
         }
         return nullptr;
     }
 
     Rid &rid() override { return _abstract_rid; }
+
+    std::string getType() override { return "DeleteExecutor"; }
 };
