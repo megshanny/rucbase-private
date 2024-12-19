@@ -64,17 +64,12 @@ class IndexScanExecutor : public AbstractExecutor {
             }
         }
         fed_conds_ = conds_;
-        // 扫索引会读部分或全部记录，取排他性最大的S锁
-        if (context) {
-            context_->lock_mgr_->lock_shared_on_table(context->txn_, fh_->GetFd());
-        }
     }
 
     void beginTuple() override 
     {
         // index is available, scan index
-        auto ih =
-            sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_col_names_)).get();
+        auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_col_names_)).get();
         Iid lower = ih->leaf_begin();
         Iid upper = ih->leaf_end();
         for (auto &index_col : index_col_names_) {
@@ -107,11 +102,11 @@ class IndexScanExecutor : public AbstractExecutor {
                 }
             }
         }
-        // lower = ih->lower_bound(key);
-        // upper = ih->upper_bound(key);
+
         scan_ = std::make_unique<IxScan>(ih, lower, upper, sm_manager_->get_bpm());
         // Get the first record
-        while (!scan_->is_end()) {
+        while (!scan_->is_end()) 
+        {
             rid_ = scan_->rid();
             auto rec = fh_->get_record(rid_, context_);
             if(condCheck(rec.get(), fed_conds_, cols_)) break;

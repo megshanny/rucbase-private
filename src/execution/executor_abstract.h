@@ -44,11 +44,19 @@ class AbstractExecutor {
 
     virtual ColMeta get_col_offset(const TabCol &target) { return ColMeta();};
 
-    std::vector<ColMeta>::const_iterator get_col(const std::vector<ColMeta> &rec_cols, const TabCol &target) {
-        auto pos = std::find_if(rec_cols.begin(), rec_cols.end(), [&](const ColMeta &col) {
-            return col.tab_name == target.tab_name && col.name == target.col_name;
+    /*
+        从 rec_cols 列表中查找与 target 匹配的列（根据表名和列名）。
+        如果找到了，返回该列在 rec_cols 中的迭代器；
+        如果没有找到，则抛出 ColumnNotFoundError 异常。
+    */
+    std::vector<ColMeta>::const_iterator get_col(const std::vector<ColMeta> &rec_cols, const TabCol &target) 
+    {
+        auto pos = std::find_if(rec_cols.begin(), rec_cols.end(), [&](const ColMeta &col) 
+        {
+            return col.tab_name == target.tab_name && col.name == target.col_name; 
         });
-        if (pos == rec_cols.end()) {
+        if (pos == rec_cols.end()) 
+        {
             throw ColumnNotFoundError(target.tab_name + '.' + target.col_name);
         }
         return pos;
@@ -56,33 +64,28 @@ class AbstractExecutor {
    
     bool condCheck(const RmRecord *l_record, const std::vector<Condition>& conds_, const std::vector<ColMeta>& cols_) 
     {
-        char *l_val_buf, *r_val_buf;
-        const RmRecord *r_record;
+        char *l_val, *r_val;
 
-        for (auto &condition : conds_) // 条件判断
+        for (auto &cond : conds_) // 条件判断
         {  
-            CompOp op = condition.op;
+            CompOp op = cond.op;
             int cmp;
 
-            // record和col确定数据位置
-            auto l_col = get_col(cols_, condition.lhs_col);  // 左列元数据
-            l_val_buf = l_record->data + l_col->offset;      // 确定左数据起点
+            auto l_col = get_col(cols_, cond.lhs_col);  // 左列元数据
+            l_val = l_record->data + l_col->offset;      // 确定左数据起点
 
-            if (condition.is_rhs_val) 
-            {  // 值
-                r_record = condition.rhs_val.raw.get();
-                r_val_buf = r_record->data;
-
-                cmp = ix_compare(l_val_buf, r_val_buf, condition.rhs_val.type, l_col->len);
+            if (cond.is_rhs_val)    //如果右边是值
+            { 
+                r_val = cond.rhs_val.raw.get()->data; 
+                cmp = ix_compare(l_val, r_val, cond.rhs_val.type, l_col->len);
             } 
-            else 
-            {  // 列
-                auto r_col = get_col(cols_, condition.rhs_col);
-                r_val_buf = l_record->data + r_col->offset;
-
-                cmp = ix_compare(l_val_buf, r_val_buf, r_col->type, l_col->len);
+            else                    // 如果右边是列
+            {  
+                auto r_col = get_col(cols_, cond.rhs_col); // 右列元数据
+                r_val = l_record->data + r_col->offset; // 确定右数据起点
+                cmp = ix_compare(l_val, r_val, r_col->type, l_col->len); 
             }
-            if (!op_compare(op, cmp))  // 不满足条件
+            if (!op_compare(op, cmp)) // 比较结果不符合条件
                 return false;
         }
         return true;

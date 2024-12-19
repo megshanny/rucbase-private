@@ -19,7 +19,7 @@ See the Mulan PSL v2 for more details. */
 #include "record/rm_defs.h"
 
 
-struct TabCol {
+struct TabCol { 
     std::string tab_name;
     std::string col_name;
 
@@ -74,12 +74,12 @@ struct Value {
 
 enum CompOp { OP_EQ, OP_NE, OP_LT, OP_GT, OP_LE, OP_GE };
 
-struct Condition {
-    TabCol lhs_col;   // left-hand side column
-    CompOp op;        // comparison operator
-    bool is_rhs_val;  // true if right-hand side is a value (not a column)
-    TabCol rhs_col;   // right-hand side column
-    Value rhs_val;    // right-hand side value
+struct Condition {     // where子句中的条件,eg: where age > 18, or where name = 'Tom'
+    TabCol lhs_col;   // left-hand side column，左边列名
+    CompOp op;        // comparison operator，比较符
+    bool is_rhs_val;  // true if right-hand side is a value (not a column)，如果右边是值（不是列名）则为true
+    TabCol rhs_col;   // right-hand side column，右边的列名
+    Value rhs_val;    // right-hand side value，右边的值
 };
 
 struct SetClause {
