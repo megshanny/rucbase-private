@@ -37,7 +37,8 @@ class DeleteExecutor : public AbstractExecutor {
     }
 
     std::unique_ptr<RmRecord> Next() override {
-        for (Rid rid : rids_) // 扫描记录
+
+        for (Rid rid : rids_) 
         {          
             if (!fh_->is_record(rid)) // 无记录扫描下一条
             {  
@@ -47,8 +48,7 @@ class DeleteExecutor : public AbstractExecutor {
             if (!condCheck(fh_->get_record(rid, context_).get(), conds_, tab_.cols)) {  // 记录检查是否符合where语句
                 continue;
             }
-
-            // 智能指针不能转换为普通指针
+            
             fh_->delete_record(rid, context_);
         }
         return nullptr;

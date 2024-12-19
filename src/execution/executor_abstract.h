@@ -59,7 +59,8 @@ class AbstractExecutor {
         char *l_val_buf, *r_val_buf;
         const RmRecord *r_record;
 
-        for (auto &condition : conds_) {  // 条件判断
+        for (auto &condition : conds_) // 条件判断
+        {  
             CompOp op = condition.op;
             int cmp;
 
@@ -67,12 +68,15 @@ class AbstractExecutor {
             auto l_col = get_col(cols_, condition.lhs_col);  // 左列元数据
             l_val_buf = l_record->data + l_col->offset;      // 确定左数据起点
 
-            if (condition.is_rhs_val) {  // 值
+            if (condition.is_rhs_val) 
+            {  // 值
                 r_record = condition.rhs_val.raw.get();
                 r_val_buf = r_record->data;
 
                 cmp = ix_compare(l_val_buf, r_val_buf, condition.rhs_val.type, l_col->len);
-            } else {  // 列
+            } 
+            else 
+            {  // 列
                 auto r_col = get_col(cols_, condition.rhs_col);
                 r_val_buf = l_record->data + r_col->offset;
 
@@ -98,7 +102,7 @@ class AbstractExecutor {
         } else if (op == OP_GE) {
             return cmp >= 0;
         } else {
-            throw InternalError("Invalid CompOp");
+            throw InternalError("Unexpected field type");
         }
     }
 };

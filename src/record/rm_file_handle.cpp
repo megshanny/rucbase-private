@@ -116,7 +116,7 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
         throw RecordNotFoundError(rid.page_no, rid.slot_no);
     }
     
-    // 如果页面已满，调用 release_page_handle 函数释放页面句柄
+    // 如果页面已满，更新文件头的第一个空闲页面号
     if(temp.page_hdr->num_records == file_hdr_.num_records_per_page){
         release_page_handle(temp);
     }
