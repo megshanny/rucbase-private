@@ -15,7 +15,8 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class NestedLoopJoinExecutor : public AbstractExecutor {
+class NestedLoopJoinExecutor : public AbstractExecutor 
+{
    private:
     std::unique_ptr<AbstractExecutor> left_;   // 左儿子节点（需要join的表）
     std::unique_ptr<AbstractExecutor> right_;  // 右儿子节点（需要join的表）
@@ -61,19 +62,13 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
 
             for (; !left_->is_end(); left_->nextTuple()) 
             {
-                if (condCheck(get_rec().get(), fed_conds_, cols_)) return;
+                if (condCheck(Next().get(), fed_conds_, cols_)) return;
             }
         }
     }
 
-    std::unique_ptr<RmRecord> Next() override { return get_rec(); }
-
-    Rid &rid() override { return _abstract_rid; }
-
-    bool is_end() const override { return left_->is_end(); }
-
-    std::unique_ptr<RmRecord> get_rec() 
-    {
+    std::unique_ptr<RmRecord> Next() override 
+    { 
         std::unique_ptr<RmRecord> record = std::make_unique<RmRecord>(len_);
         std::unique_ptr<RmRecord> l_rec = left_->Next();
         std::unique_ptr<RmRecord> r_rec = right_->Next();
@@ -84,7 +79,9 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
 
         return record;
     }
-
+    
+    Rid &rid() override { return _abstract_rid; }
+    bool is_end() const override { return left_->is_end(); }
     size_t tupleLen() const override { return len_; };
     std::string getType() override { return "NestedLoopJoinExecutor"; };
     const std::vector<ColMeta> &cols() const override { return cols_; };
