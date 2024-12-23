@@ -28,33 +28,39 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
    public:
     NestedLoopJoinExecutor(std::unique_ptr<AbstractExecutor> left, std::unique_ptr<AbstractExecutor> right,
                            std::vector<Condition> conds) {
-        left_ = std::move(left);
+        left_ = std::move(left); 
         right_ = std::move(right);
-        len_ = left_->tupleLen() + right_->tupleLen();
+        len_ = left_->tupleLen() + right_->tupleLen(); // 连接后每条记录的总字节数
         cols_ = left_->cols();
+
         auto right_cols = right_->cols();
-        for (auto &col : right_cols) {
+        for (auto &col : right_cols) 
+        {
             col.offset += left_->tupleLen();
         }
 
-        cols_.insert(cols_.end(), right_cols.begin(), right_cols.end());
-        isend = false;
+        cols_.insert(cols_.end(), right_cols.begin(), right_cols.end()); // 连接后的字段
+        isend = false; 
         fed_conds_ = std::move(conds);
     }
 
-    void beginTuple() override {
+    void beginTuple() override 
+    {
         left_->beginTuple();
         right_->beginTuple();
     }
 
-    void nextTuple() override {
-        for (; !right_->is_end(); right_->nextTuple()) {
+    void nextTuple() override 
+    {
+        for (; !right_->is_end(); right_->nextTuple()) 
+        {
             if (left_->is_end())
                 left_->beginTuple();
             else
                 left_->nextTuple();
 
-            for (; !left_->is_end(); left_->nextTuple()) {
+            for (; !left_->is_end(); left_->nextTuple()) 
+            {
                 if (condCheck(get_rec().get(), fed_conds_, cols_)) return;
             }
         }
@@ -66,7 +72,8 @@ class NestedLoopJoinExecutor : public AbstractExecutor {
 
     bool is_end() const override { return left_->is_end(); }
 
-    std::unique_ptr<RmRecord> get_rec() {
+    std::unique_ptr<RmRecord> get_rec() 
+    {
         std::unique_ptr<RmRecord> record = std::make_unique<RmRecord>(len_);
         std::unique_ptr<RmRecord> l_rec = left_->Next();
         std::unique_ptr<RmRecord> r_rec = right_->Next();

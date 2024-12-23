@@ -55,7 +55,7 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     void nextTuple() override {
-        // 条件判断
+        // 扫描到下一个满足条件的记录,赋rid_,中止循环
         for (scan_->next(); !scan_->is_end(); scan_->next()) {
             rid_ = scan_->rid();
             if (condCheck(fh_->get_record(rid_, context_).get(), conds_, cols_)) break;
@@ -69,7 +69,6 @@ class SeqScanExecutor : public AbstractExecutor {
     }
 
     Rid &rid() override { return rid_; }
-    
     size_t tupleLen() const override { return len_; };
     std::string getType() override { return "SeqScanExecutor"; };
     const std::vector<ColMeta> &cols() const override { return cols_; };

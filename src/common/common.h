@@ -36,7 +36,7 @@ struct Value {
     };
     std::string str_val;  // string value
 
-    std::shared_ptr<RmRecord> raw;  // raw record buffer
+    std::shared_ptr<RmRecord> raw;  // raw record buffer原始记录数据
 
     void set_int(int int_val_) {
         type = TYPE_INT;

@@ -46,7 +46,7 @@ class SmManager {
 
     ~SmManager() {}
 
-    BufferPoolManager* get_bpm() { return buffer_pool_manager_; }
+    BufferPoolManager* get_bpm() { return buffer_pool_manager_; } // 获取缓冲池管理器, 用于获取页面
 
     RmManager* get_rm_manager() { return rm_manager_; }  
 

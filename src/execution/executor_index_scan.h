@@ -50,12 +50,15 @@ class IndexScanExecutor : public AbstractExecutor {
         fh_ = sm_manager_->fhs_.at(tab_name_).get();
         cols_ = tab_.cols;
         len_ = cols_.back().offset + cols_.back().len;
+        
+        // 将左边的列调整为索引列
         std::map<CompOp, CompOp> swap_op = {
             {OP_EQ, OP_EQ}, {OP_NE, OP_NE}, {OP_LT, OP_GT}, {OP_GT, OP_LT}, {OP_LE, OP_GE}, {OP_GE, OP_LE},
         };
-
-        for (auto &cond : conds_) {
-            if (cond.lhs_col.tab_name != tab_name_) {
+        for (auto &cond : conds_) 
+        {
+            if (cond.lhs_col.tab_name != tab_name_)  
+            {
                 // lhs is on other table, now rhs must be on this table
                 assert(!cond.is_rhs_val && cond.rhs_col.tab_name == tab_name_);
                 // swap lhs and rhs
@@ -72,18 +75,23 @@ class IndexScanExecutor : public AbstractExecutor {
         auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index_col_names_)).get();
         Iid lower = ih->leaf_begin();
         Iid upper = ih->leaf_end();
-        for (auto &index_col : index_col_names_) {
-            for (auto &cond : fed_conds_) {
-                if (cond.is_rhs_val && cond.op != OP_NE && cond.lhs_col.col_name == index_col) {
-                    // char *key = cond.rhs_val.raw->data;
+        for (auto &index_col : index_col_names_) 
+        {
+            for (auto &cond : fed_conds_) 
+            {
+                if (cond.is_rhs_val && cond.op != OP_NE && cond.lhs_col.col_name == index_col) //
+                {
+                    // 获得索引列的值
                     int offset = 0;
-                    char *key = new char[index_meta_.col_tot_len];
-                    for (size_t i = 0; i < index_meta_.col_num; ++i) {
+                    char *key = new char[index_meta_.col_tot_len]; // 拼接得到索引列的值
+                    for (size_t i = 0; i < index_meta_.col_num; ++i) 
+                    {
                         auto &cond = fed_conds_[i];
                         auto &col = index_meta_.cols[i];
                         memcpy(key + offset, cond.rhs_val.raw->data, col.len);
                         offset += col.len;
                     }
+                    // 根据不同的条件，调整lower和upper
                     if (cond.op == OP_EQ) {
                         lower = ih->lower_bound(key);
                         upper = ih->upper_bound(key);
@@ -96,9 +104,9 @@ class IndexScanExecutor : public AbstractExecutor {
                     } else if (cond.op == OP_GE) {
                         lower = ih->lower_bound(key);
                     } else {
-                        throw InternalError("Unexpected op type");
+                        throw InternalError("Unexpected field type");
                     }
-                    break;  // TODO: maintain an interval
+                    break;  // only one index column is allowed
                 }
             }
         }
@@ -115,27 +123,21 @@ class IndexScanExecutor : public AbstractExecutor {
     }
 
     void nextTuple() override {
-        assert(!is_end());
         // 扫描到下一个满足条件的记录,赋rid_,中止循环
         for (scan_->next(); !scan_->is_end(); scan_->next()) {
             rid_ = scan_->rid();
-            auto rec = fh_->get_record(rid_, context_);
-            if (condCheck(rec.get(), fed_conds_, cols_)) break;
+            if (condCheck(fh_->get_record(rid_, context_).get(), fed_conds_, cols_)) break;
         }
     }
 
     bool is_end() const override { return scan_->is_end(); }
 
-    size_t tupleLen() const override { return len_; }
-
-    const std::vector<ColMeta> &cols() const override { return cols_; }
-
-    std::unique_ptr<RmRecord> Next() override {
-
-        assert(!is_end());
+    std::unique_ptr<RmRecord> Next() override  //获取当前记录
+    {
         return fh_->get_record(rid_, context_);
     }
 
     Rid &rid() override { return rid_; }
-
+    size_t tupleLen() const override { return len_; }
+    const std::vector<ColMeta> &cols() const override { return cols_; }
 };
