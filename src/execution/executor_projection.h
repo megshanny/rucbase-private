@@ -15,7 +15,8 @@ See the Mulan PSL v2 for more details. */
 #include "index/ix.h"
 #include "system/sm.h"
 
-class ProjectionExecutor : public AbstractExecutor {
+class ProjectionExecutor : public AbstractExecutor 
+{
    private:
     std::unique_ptr<AbstractExecutor> prev_;        // 投影节点的儿子节点
     std::vector<ColMeta> cols_;                     // 需要投影的字段
@@ -23,7 +24,8 @@ class ProjectionExecutor : public AbstractExecutor {
     std::vector<size_t> sel_idxs_;                  
 
    public:
-    ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) {
+    ProjectionExecutor(std::unique_ptr<AbstractExecutor> prev, const std::vector<TabCol> &sel_cols) 
+    {
         prev_ = std::move(prev);
 
         size_t curr_offset = 0;

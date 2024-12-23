@@ -53,13 +53,16 @@ class NestedLoopJoinExecutor : public AbstractExecutor
 
     void nextTuple() override 
     {
+         // 遍历右表
         for (; !right_->is_end(); right_->nextTuple()) 
         {
+            // 处理左表的移动
             if (left_->is_end())
                 left_->beginTuple();
-            else
+            else // 左表还没匹配完，接着匹配，不然就一直匹配同一个死循环了
                 left_->nextTuple();
 
+            // 遍历左表的每一行，并进行连接检查
             for (; !left_->is_end(); left_->nextTuple()) 
             {
                 if (condCheck(Next().get(), fed_conds_, cols_)) return;
