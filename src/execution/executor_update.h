@@ -25,8 +25,6 @@ class UpdateExecutor : public AbstractExecutor {
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
 
-    // std::vector<ColMeta> cols_;
-
    public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<SetClause> set_clauses,
                    std::vector<Condition> conds, std::vector<Rid> rids, Context *context) {
@@ -38,8 +36,6 @@ class UpdateExecutor : public AbstractExecutor {
         conds_ = conds;
         rids_ = rids;
         context_ = context;
-
-        // cols_ = tab_.cols;
     }
     std::unique_ptr<RmRecord> Next() override {
         // Update each rid of record file and index file
