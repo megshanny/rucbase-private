@@ -17,46 +17,64 @@ See the Mulan PSL v2 for more details. */
  * @param {Rid&} rid 加锁的目标记录ID 记录所在的表的fd
  * @param {int} tab_fd
  */
-bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
-    // 0. 上锁    
-    std::unique_lock<std::mutex> lock{latch_};
-    // 1. 检查并更新事务状态 2PL
+
+bool check_state(Transaction* txn)
+{
     TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::SHRINKING){
+    if(txn_stat == TransactionState::SHRINKING)
+    {
         throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
         return false;
     }
-    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        // TODO how to handle this
-        return false; 
-    }    
+    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED)
+    {
+        return false;
+    }
     txn->set_state(TransactionState::GROWING);
-    // 2. 检查当前事务是否已经上过该记录的锁，行锁不含意向锁，所以对于读锁来说上过锁（S or X）就可以返回了
+    return true;
+}
+
+bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd) 
+{
+    std::unique_lock<std::mutex> lock{latch_};
+    
+    if(!check_state(txn))
+    {
+        return false;
+    }
+
+    // 检查是否已经上过该记录的锁（record只会有SX锁）
     LockDataId rec_lockID = LockDataId(tab_fd,rid,LockDataType::RECORD);
     auto txn_locks = txn->get_lock_set();
-    if(txn_locks->find(rec_lockID) != txn_locks->end()){
+    if(txn_locks->find(rec_lockID) != txn_locks->end())
+    {
         return true;
     }
-    // 3. 检查该行上是否有其它事务的写锁，如果有，本事务需要abort no-wait
-    for(auto lock_it = lock_table_[rec_lockID].request_queue_.begin();lock_it!=lock_table_[rec_lockID].request_queue_.end();++lock_it){
-        if(lock_it->txn_id_ != txn->get_transaction_id()
-            && lock_it->lock_mode_ == LockMode::EXLUCSIVE){
+
+    // 检查是否有其他事务的锁，有排他锁则直接abort
+    for(auto it: lock_table_[rec_lockID].request_queue_)
+    {
+        if(it.txn_id_ != txn->get_transaction_id()
+            && it.lock_mode_ == LockMode::EXLUCSIVE)
+            {
                 throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
                 return false;
             }
     }
-    // 4. 2&3检查通过，开始颁发锁
-    // 4.1 把该锁insert进本事务的锁集
+
+    // 加锁
+    // 把锁IDinsert进本事务的锁集
     txn_locks->insert(rec_lockID);
-    // 4.2 创建新的锁申请，全局锁，更新group_lock_mode_
-    LockRequest lock_request = LockRequest(txn->get_transaction_id(),LockMode::SHARED);
-    lock_request.granted_ = true;
+    // 创建新的锁申请
+    LockRequest lock_request = LockRequest(txn->get_transaction_id(), LockMode::SHARED);
+    lock_request.granted_ = true; 
     lock_table_[rec_lockID].request_queue_.push_back(lock_request);
-    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::S){
+    //更新group_lock_mode_
+    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::S)
+    {
         lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::S;
     }
     return true;
-    // TODO 阻塞？
 }
 
 /**
@@ -66,57 +84,59 @@ bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int ta
  * @param {Rid&} rid 加锁的目标记录ID
  * @param {int} tab_fd 记录所在的表的fd
  */
-bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
-    // 0.
+bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd) 
+{    
     std::unique_lock<std::mutex> lock{latch_};
-    // 1.
-    TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::SHRINKING){
-        throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+    
+    if(!check_state(txn))
+    {
         return false;
     }
-    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        // TODO how to handle this
-        return false;
-    }
-    txn->set_state(TransactionState::GROWING);
-    // 2. 检查是否有其他事务的锁，任何锁都会与写锁冲突
-    //    扫描的同时记录下本事务对该记录加的锁
+
+    // 如果有其他事务的锁，直接abort
+    // 记录本事务已经有的锁
     LockDataId rec_lockID = LockDataId(tab_fd,rid,LockDataType::RECORD);
     std::list<LockRequest>::iterator txn_rlock_it;
-    bool self_rlock_found =false;
-    for(auto it = lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();++it){
-        if(it->txn_id_ != txn->get_transaction_id()){
-            throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
+    bool Sharedlock =false;
+
+    for(auto it = lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++)
+    {
+        if(it->txn_id_ != txn->get_transaction_id())
+        {
+            throw TransactionAbortException(txn->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
             return false;
         }
-        else{
-            if(it->lock_mode_ == LockMode::EXLUCSIVE){
+        else
+        {
+            if(it->lock_mode_ == LockMode::EXLUCSIVE)
+            {
                 return true;
             }
-            else{
-                // 这里不直接升级的原因是防止：本事务读 B事务读 应该abort本事务 而不是直接升级
+            else
+            {
                 txn_rlock_it = it;
-                self_rlock_found = true;
+                Sharedlock = true;
             }
         }
     }
-    // 3. 检查本事务是否已经持有当前记录的锁，有读锁则升级成写锁
-    if(self_rlock_found){
-        // update lock_mode and group_lock_mode
+    // 如果已经有了共享锁，直接升级
+    if(Sharedlock)
+    {
         txn_rlock_it->lock_mode_ = LockMode::EXLUCSIVE;
-        if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X){
+        if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X)
+        {
             lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::X;
         }
         return true;
     }
-    // 4. 没有其它锁，也没有自身的锁，颁发新的锁
+    // 没有锁情况下，加锁  
     auto txn_locks = txn->get_lock_set();
     txn_locks->insert(rec_lockID);
     LockRequest lock_req = LockRequest(txn->get_transaction_id(),LockMode::EXLUCSIVE);
     lock_req.granted_ = true;
     lock_table_[rec_lockID].request_queue_.push_back(lock_req);
-    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X){
+    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X)
+    {
         lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::X;
     }
     return true;
@@ -128,81 +148,82 @@ bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int
  * @param {Transaction*} txn 要申请锁的事务对象指针
  * @param {int} tab_fd 目标表的fd
  */
-bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
-    // 0.
+bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) 
+{
     std::unique_lock<std::mutex> lock{latch_};
-    // 1.
-    TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::SHRINKING){
-        throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+
+    if(!check_state(txn))
+    {
         return false;
     }
-    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        // TODO how to handle this
-        return false; 
-    }    
-    txn->set_state(TransactionState::GROWING);
-    // 2 检查是否有其它事务的X IX SIX锁，如果有则abort
+    
     LockDataId rec_lockID = LockDataId(tab_fd,LockDataType::TABLE);
-    bool stronger_found = false; // for S X SIX
-    std::list<LockRequest>::iterator is_it; // for IS should update to S
-    bool is_found = false;
-    std::list<LockRequest>::iterator ix_it; // for IX should update to SIX
-    bool ix_found = false;
-    for(auto it = lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++){
-        if(it->txn_id_ != txn->get_transaction_id()){
+    bool hasOtherLock = false;
+    std::list<LockRequest>::iterator iterIS; 
+    bool hasIS = false;
+    std::list<LockRequest>::iterator iterIX;
+    bool hasIX = false;
+    for(auto it = lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++)
+    {
+        if(it->txn_id_ != txn->get_transaction_id()) //检查是否有其它事务的X IX SIX锁，如果有则abort
+        {
             if(it->lock_mode_ == LockMode::EXLUCSIVE 
                 || it->lock_mode_ == LockMode::INTENTION_EXCLUSIVE
-                || it->lock_mode_ == LockMode::S_IX){
+                || it->lock_mode_ == LockMode::S_IX)
+                {
                     throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
                     return false;
                 }
         }
-        else{
-            // TODO granted?
-            if(it->lock_mode_ == LockMode::INTENTION_SHARED){
-                is_it = it;
-                is_found = true;
+        else
+        {
+            if(it->lock_mode_ == LockMode::INTENTION_SHARED)
+            {
+                iterIS = it;
+                hasIS = true;
             }
-            else if(it->lock_mode_ == LockMode::INTENTION_EXCLUSIVE){
-                ix_it = it;
-                ix_found = true;
+            else if(it->lock_mode_ == LockMode::INTENTION_EXCLUSIVE)
+            {
+                iterIX = it;
+                hasIX = true;
             }
-            else{
-                stronger_found = true;
+            else
+            {
+                hasOtherLock = true;
             }
         }
     }
-    // 3 检查当前事务是否有其它锁 如果已经有了S、X、SIX锁，直接返回； 如果IS，升级成S锁
-    //      如果当前事务已经持有了IX，升级成SIX
-    //      理论上一个事务应该只会有一个锁
-    if(stronger_found){
-            return true;
-        }
-    if(is_found){
-        // have a IS lock -> S lock
-        is_it->lock_mode_ = LockMode::SHARED;
+
+    if(hasOtherLock) //如果S X SIX，直接返回
+    {
+        return true;
+    }
+    if(hasIS) //如果IS，升级成S
+    {
+        iterIS->lock_mode_ = LockMode::SHARED;
         if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::S){
             lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::S;
         }
         return true;
     }
-    if(ix_found){
-        // have a IX lock -> SIX lock
-        ix_it->lock_mode_ = LockMode::S_IX;
-        if(lock_table_[rec_lockID].group_lock_mode_ != GroupLockMode::X){
-            // SIX以上的只有X，这里发现enum没按偏序顺序来
+    if(hasIX) //如果IX，升级成SIX
+    {
+        iterIX->lock_mode_ = LockMode::S_IX;
+        if(lock_table_[rec_lockID].group_lock_mode_ != GroupLockMode::X)
+        {
+            //如果是X，不用升级
             lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::SIX;
         }
         return true;
     }
-    // 4. 颁发新的锁
+    // 没有锁，直接加锁
     auto txn_locks = txn->get_lock_set();
     txn_locks->insert(rec_lockID);
     LockRequest lock_request = LockRequest(txn->get_transaction_id(),LockMode::SHARED);
     lock_request.granted_ = true;
     lock_table_[rec_lockID].request_queue_.push_back(lock_request);
-    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::S){
+    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::S)
+    {
         lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::S;
     }
     return true;
@@ -215,50 +236,46 @@ bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd) {
-    // 0
+    
     std::unique_lock<std::mutex> lock{latch_};
-    // 1
-    TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::SHRINKING){
-        throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+    
+    if(!check_state(txn))
+    {
         return false;
     }
-    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        return false;
-    }
-    txn->set_state(TransactionState::GROWING);
-    // 2 检查是否有其他事务的锁，任何一种都需要abort
+
+    // 检查是否有其他事务的锁，直接abort
     LockDataId rec_lockID = LockDataId(tab_fd,LockDataType::TABLE);
-    bool weaker_found = false; // for IS IX S SIX update to X
+    bool thisLock = false; // IS IX S SIX -> X
     std::list<LockRequest>::iterator weaker_it;
-    bool x_found = false;         // for X
     for(auto it = lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++){
         if(it->txn_id_ != txn->get_transaction_id()){
             throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
             return false;
         }
-        else{
-            if(it->lock_mode_==LockMode::EXLUCSIVE){
-                x_found  = true;
-                // return true;     // 应该可以直接return，前面已经有X锁的情况下，后面没法再加其它事务的锁了
+        else
+        {
+            if(it->lock_mode_==LockMode::EXLUCSIVE)
+            {
+                return true;
             }
-            else{
-                weaker_found = true;
+            else
+            {
+                thisLock = true;
                 weaker_it = it;
             }
         }
     }
-    // 3 检查当前事务是否有其它锁
+
     // IS,IX,S,SIX 升级成 X;
-    if(x_found){
-        return true;
-    }
-    if(weaker_found){
+    if(thisLock)
+    {
         weaker_it->lock_mode_ = LockMode::EXLUCSIVE;
         lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::X;
         return true;
     }
-    // 4 
+
+    // 没有锁，直接加锁
     auto txn_locks = txn->get_lock_set();
     txn_locks->insert(rec_lockID);
     LockRequest lock_request = LockRequest(txn->get_transaction_id(),LockMode::EXLUCSIVE);
@@ -277,36 +294,30 @@ bool LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_IS_on_table(Transaction* txn, int tab_fd) {
-    // 0
+    
     std::unique_lock<std::mutex> lock{latch_};
-    // 1
-    TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::SHRINKING){
-        throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+
+    if(!check_state(txn))
+    {
         return false;
     }
-    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        return false;
-    }
-    txn->set_state(TransactionState::GROWING);
-    // 2 检查是否有其它事务的锁，X锁需要回滚
+
     LockDataId rec_lockID = LockDataId(tab_fd,LockDataType::TABLE);
-    bool have_lock = false;
-    for(auto it=lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++){
-        if(it->txn_id_ != txn->get_transaction_id() 
-            && it->lock_mode_ == LockMode::EXLUCSIVE){
-                throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
-                return false;
-            }
-        else{
-            have_lock = true;
+    for(auto it = lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++)
+    {
+        if(it->txn_id_ != txn->get_transaction_id()&& it->lock_mode_ == LockMode::EXLUCSIVE)
+        {
+            throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
+            return false;
+        }
+        else
+        {
+            //当前事务有锁，直接返回，不会冲突
+            return true;
         }
     }
-    // 3 检查当前事务的锁，不需要升级，任何一种锁都可以return true
-    if(have_lock){
-        return true;
-    }
-    // 4
+    
+    //没有锁，直接加锁
     auto txn_locks = txn->get_lock_set();
     txn_locks->insert(rec_lockID);
     LockRequest lock_request = LockRequest(txn->get_transaction_id(),LockMode::INTENTION_SHARED);
@@ -324,75 +335,80 @@ bool LockManager::lock_IS_on_table(Transaction* txn, int tab_fd) {
  * @param {Transaction*} txn 要申请锁的事务对象指针
  * @param {int} tab_fd 目标表的fd
  */
-bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) {
-    // 0
+bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) 
+{
     std::unique_lock<std::mutex> lock{latch_};
-    // 1
-    TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::SHRINKING){
-        throw TransactionAbortException(txn->get_transaction_id(),AbortReason::LOCK_ON_SHIRINKING);
+    
+    if(!check_state(txn))
+    {
         return false;
     }
-    else if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        return false;
-    }
-    txn->set_state(TransactionState::GROWING);
-    // 2 检查是否有其它事务的锁，S X SIX需要abort
+
+    // 检查是否有其它事务的锁，S X SIX需要abort
     LockDataId rec_lockID = LockDataId(tab_fd,LockDataType::TABLE);
     bool s_found = false;                   // for s upgrade to SIX
     std::list<LockRequest>::iterator s_it;
-    bool is_found = false;                  // for is upgrade to IX
-    std::list<LockRequest>::iterator is_it;
-    bool have_stronger = false;             // for X SIX IX
-    for(auto it=lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++){
+    bool hasIS = false;                  // for is upgrade to IX
+    std::list<LockRequest>::iterator iterIS;
+
+    for(auto it=lock_table_[rec_lockID].request_queue_.begin();it!=lock_table_[rec_lockID].request_queue_.end();it++)
+    {
         if(it->txn_id_ != txn->get_transaction_id()
         && (it->lock_mode_ == LockMode::SHARED
             || it->lock_mode_ == LockMode::EXLUCSIVE
-            || it->lock_mode_ == LockMode::S_IX)){
+            || it->lock_mode_ == LockMode::S_IX))
+            {
                 throw TransactionAbortException(txn->get_transaction_id(),AbortReason::DEADLOCK_PREVENTION);
                 return false;
             }
-        else{
-            if(it->lock_mode_ == LockMode::SHARED){
+        else
+        {
+            if(it->lock_mode_ == LockMode::SHARED)
+            {
                 s_found = true;
                 s_it = it;
             }
-            else if(it->lock_mode_ == LockMode::INTENTION_SHARED){
-                is_found = true;
-                is_it = it;
+            else if(it->lock_mode_ == LockMode::INTENTION_SHARED)
+            {
+                hasIS = true;
+                iterIS = it;
             }
-            else{
-                have_stronger = true;
+            else
+            {
+                //X\IX\SIX锁return true
+                return true;
             }
         }
     }
-    // 3 检查是否有当前事务的锁，S锁需要升级成SIX，X\IX\SIX锁return true，IS升级成IX
-    if(have_stronger){
-        return true;
-    }
-    if(s_found){
-        // S -> SIX
+    // S锁需要升级成SIX
+    if(s_found)
+    {
         s_it->lock_mode_ = LockMode::S_IX;
-        if(lock_table_[rec_lockID].group_lock_mode_ != GroupLockMode::X){
+        if(lock_table_[rec_lockID].group_lock_mode_ != GroupLockMode::X)
+        {
             lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::SIX;
         }
         return true;
     }
-    if(is_found){
-        // IS -> IX
-        is_it->lock_mode_ = LockMode::INTENTION_EXCLUSIVE;
-        if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X){ // 这个条件排除了X和SIX enum没有按顺序
+    // IS锁需要升级成IX
+    if(hasIS)
+    {
+        iterIS->lock_mode_ = LockMode::INTENTION_EXCLUSIVE;
+        if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X)
+        { 
             lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::IX;
         }
         return true;
     }
-    // 4
+
+    // 没有锁，直接加锁
     auto txn_locks = txn->get_lock_set();
     txn_locks->insert(rec_lockID);
     LockRequest lock_request = LockRequest(txn->get_transaction_id(),LockMode::INTENTION_EXCLUSIVE);
     lock_request.granted_ = true;
     lock_table_[rec_lockID].request_queue_.push_back(lock_request);
-    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X){
+    if(lock_table_[rec_lockID].group_lock_mode_ < GroupLockMode::X)
+    {
         lock_table_[rec_lockID].group_lock_mode_ = GroupLockMode::IX;
     }
     return true;
@@ -404,30 +420,34 @@ bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) {
  * @param {Transaction*} txn 要释放锁的事务对象指针
  * @param {LockDataId} lock_data_id 要释放的锁ID
  */
-bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
-    // 0 上锁
+bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) 
+{    
     std::unique_lock<std::mutex> lock{latch_};
-    // 1 检查并修改事务状态为shrinking 2PL
+    // 检查并修改事务状态
     TransactionState txn_stat = txn->get_state();
-    if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED){
-        // TODO how to handle this
+    if(txn_stat == TransactionState::ABORTED || txn_stat == TransactionState::COMMITTED)
+    {
         return false;
     }
     txn->set_state(TransactionState::SHRINKING);
-    // 2 检查txn和data_id是否匹配
+
+    // 检查txn和data_id是否匹配
     if(txn->get_lock_set()->find(lock_data_id) == txn->get_lock_set()->end()){
         return false;
     }
-    // 3 在全局锁表里删掉txn开的所有锁
-    for(auto it=lock_table_[lock_data_id].request_queue_.begin();it!=lock_table_[lock_data_id].request_queue_.end();){
-        if(it->txn_id_ == txn->get_transaction_id()){
+    // 在全局锁表里删掉txn开的所有锁
+    for(auto it=lock_table_[lock_data_id].request_queue_.begin();it!=lock_table_[lock_data_id].request_queue_.end();)
+    {
+        if(it->txn_id_ == txn->get_transaction_id())
+        {
             it = lock_table_[lock_data_id].request_queue_.erase(it);
         }
-        else{
+        else
+        {
             it++;
         }
     }
-    // 4 修改lock_table_[lock_data_id]的GroupLockMode
+    // 修改lock_table_[lock_data_id]的GroupLockMode
     GroupLockMode new_mode = GroupLockMode::NON_LOCK;
     for(auto it=lock_table_[lock_data_id].request_queue_.begin();it!=lock_table_[lock_data_id].request_queue_.end();it++){
         if(it->granted_){
@@ -438,16 +458,20 @@ bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
                     }
                     break;
                 }
-                case LockMode::INTENTION_EXCLUSIVE:{
-                    if(new_mode == GroupLockMode::NON_LOCK || new_mode == GroupLockMode::IS){
+                case LockMode::INTENTION_EXCLUSIVE:
+                {
+                    if(new_mode == GroupLockMode::NON_LOCK || new_mode == GroupLockMode::IS)
+                    {
                         new_mode = GroupLockMode::IX;
                     }
-                    else if(new_mode == GroupLockMode::S){
+                    else if(new_mode == GroupLockMode::S)
+                    {
                         new_mode = GroupLockMode::SIX;
                     }
                     break;
                 }
-                case LockMode::SHARED:{
+                case LockMode::SHARED:
+                {
                     if(new_mode == GroupLockMode::NON_LOCK 
                         || new_mode == GroupLockMode::IS){
                         new_mode = GroupLockMode::S;
@@ -457,11 +481,13 @@ bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
                     }
                     break;
                 }
-                case LockMode::EXLUCSIVE:{
+                case LockMode::EXLUCSIVE:
+                {
                     new_mode = GroupLockMode::X;
                     break;
                 }
-                case LockMode::S_IX:{
+                case LockMode::S_IX:
+                {
                     if(new_mode != GroupLockMode::X){
                         new_mode = GroupLockMode::SIX;
                     }
