@@ -44,6 +44,9 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
  * @return {Rid} 插入的记录的记录号（位置）
  */
 Rid RmFileHandle::insert_record(char* buf, Context* context) {
+    
+    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fd_);
+    
     // 创建一个新的页面句柄
     RmPageHandle temp = create_page_handle();
     
@@ -74,7 +77,8 @@ Rid RmFileHandle::insert_record(char* buf, Context* context) {
  * @param {Rid&} rid 要插入记录的位置
  * @param {char*} buf 要插入记录的数据
  */
-void RmFileHandle::insert_record(const Rid& rid, char* buf) {
+void RmFileHandle::insert_record(const Rid& rid, char* buf) 
+{
     // 如果指定页面号超过已有页面数量，创建一个新页面句柄
     if(rid.page_no < file_hdr_.num_pages){
         create_new_page_handle();
@@ -107,7 +111,11 @@ void RmFileHandle::insert_record(const Rid& rid, char* buf) {
  * @param {Rid&} rid 要删除的记录的记录号（位置）
  * @param {Context*} context 上下文信息
  */
-void RmFileHandle::delete_record(const Rid& rid, Context* context) {
+void RmFileHandle::delete_record(const Rid& rid, Context* context) 
+{
+    context->lock_mgr_->lock_IX_on_table(context->txn_,fd_);
+    context->lock_mgr_->lock_exclusive_on_record(context->txn_,rid,fd_);
+
     // 获取包含指定记录的页面句柄
     RmPageHandle temp = fetch_page_handle(rid.page_no);
     
@@ -134,7 +142,11 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
  * @param {char*} buf 新记录的数据
  * @param {Context*} context 上下文信息
  */
-void RmFileHandle::update_record(const Rid& rid, char* buf, Context* context) {
+void RmFileHandle::update_record(const Rid& rid, char* buf, Context* context) 
+{    
+    context->lock_mgr_->lock_IX_on_table(context->txn_,fd_);
+    context->lock_mgr_->lock_exclusive_on_record(context->txn_,rid,fd_);
+    
     // 获取包含指定记录的页面句柄
     RmPageHandle temp = fetch_page_handle(rid.page_no);
     
