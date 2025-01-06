@@ -18,7 +18,9 @@ See the Mulan PSL v2 for more details. */
  */
 std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* context) const {
     
-    
+    context->lock_mgr_->lock_IS_on_table(context->txn_,fd_);
+    context->lock_mgr_->lock_shared_on_record(context->txn_,rid,fd_);
+
     // 获取包含指定记录的页面句柄
     RmPageHandle temp = fetch_page_handle(rid.page_no);
     
@@ -44,6 +46,9 @@ std::unique_ptr<RmRecord> RmFileHandle::get_record(const Rid& rid, Context* cont
  * @return {Rid} 插入的记录的记录号（位置）
  */
 Rid RmFileHandle::insert_record(char* buf, Context* context) {
+    
+    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fd_);
+    
     // 创建一个新的页面句柄
     RmPageHandle temp = create_page_handle();
     
@@ -109,6 +114,9 @@ void RmFileHandle::insert_record(const Rid& rid, char* buf) {
  */
 void RmFileHandle::delete_record(const Rid& rid, Context* context) {
     // 获取包含指定记录的页面句柄
+    context->lock_mgr_->lock_IX_on_table(context->txn_,fd_);
+    context->lock_mgr_->lock_exclusive_on_record(context->txn_,rid,fd_);
+    
     RmPageHandle temp = fetch_page_handle(rid.page_no);
     
     // 检查记录槽位是否被占用；如果未被占用，则抛出记录未找到的异常
@@ -135,6 +143,10 @@ void RmFileHandle::delete_record(const Rid& rid, Context* context) {
  * @param {Context*} context 上下文信息
  */
 void RmFileHandle::update_record(const Rid& rid, char* buf, Context* context) {
+    
+    context->lock_mgr_->lock_IX_on_table(context->txn_,fd_);
+    context->lock_mgr_->lock_exclusive_on_record(context->txn_,rid,fd_);
+    
     // 获取包含指定记录的页面句柄
     RmPageHandle temp = fetch_page_handle(rid.page_no);
     

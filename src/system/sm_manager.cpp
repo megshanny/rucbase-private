@@ -243,10 +243,11 @@ void SmManager::drop_table(const std::string& tab_name, Context* context)
         throw TableNotFoundError(tab_name);
     }
 
-    if (context && !context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name))) { // 如果context存在，且无法对表进行独占锁定
-        throw TransactionAbortException(context->txn_->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING); // 抛出事务中止异常, 事务无法获得锁
-    }
-
+    // if (context && !context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name))) { // 如果context存在，且无法对表进行独占锁定
+    //     throw TransactionAbortException(context->txn_->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING); // 抛出事务中止异常, 事务无法获得锁
+    // }
+    // 1.5 加锁
+    context->lock_mgr_->lock_exclusive_on_table(context->txn_,fhs_[tab_name]->GetFd());
 
     //获取表元数据TabMeta
     TabMeta &tab = db_.get_table(tab_name);
@@ -297,10 +298,11 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
 
     // 4. 锁定表，确保操作的独占性
     // 如果 context 存在，且无法对表进行独占锁定，抛出异常
-    if (context && !context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name))) {
-        // 事务无法获得锁，抛出事务中止异常
-        throw TransactionAbortException(context->txn_->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING);
-    }
+    // if (context && !context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name))) {
+    //     // 事务无法获得锁，抛出事务中止异常
+    //     throw TransactionAbortException(context->txn_->get_transaction_id(), AbortReason::LOCK_ON_SHIRINKING);
+    // }
+    context->lock_mgr_->lock_shared_on_table(context->txn_,fhs_[tab_name]->GetFd());
 
     // 5. 调用索引管理器创建索引
     // 使用索引管理器创建索引并将相关列元数据传递给它
@@ -323,7 +325,8 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
  * @param {Context*} context
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
-    context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name)); // 锁定表
+    // context->lock_mgr_->lock_exclusive_on_table(context->txn_, disk_manager_->get_file_fd(tab_name)); // 锁定表
+    context->lock_mgr_->lock_shared_on_table(context->txn_,fhs_[tab_name]->GetFd());
 
     if (!ix_manager_->exists(tab_name, col_names)) { // 如果索引不存在
         throw IndexNotFoundError(tab_name, col_names);

@@ -44,6 +44,8 @@ class UpdateExecutor : public AbstractExecutor {
         {
             // 获取当前记录的数据
             auto rec = fh_->get_record(rid, context_);
+            RmRecord updated_rec = RmRecord(rec->size);         // lab4
+            memcpy(updated_rec.data,rec->data,rec->size);       // lab4
 
             // 遍历每个更新的列和对应的新值
             for (auto &set_clause : set_clauses_) 
@@ -88,6 +90,9 @@ class UpdateExecutor : public AbstractExecutor {
                 }
                 ih->insert_entry(key, rid, context_->txn_);
             }
+            // lab4 modify write_set
+            WriteRecord* write_rec = new WriteRecord(WType::UPDATE_TUPLE,tab_name_,rid,updated_rec);
+            context_->txn_->append_write_record(write_rec);
         }
         return nullptr;
     }

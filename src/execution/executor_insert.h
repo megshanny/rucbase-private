@@ -70,6 +70,10 @@ class InsertExecutor : public AbstractExecutor {
             // 将键值插入到索引中:
             ih->insert_entry(key, rid_, context_->txn_);
         }
+
+        WriteRecord* write_rec = new WriteRecord(WType::INSERT_TUPLE,tab_name_,rid_);
+        context_->txn_->append_write_record(write_rec);
+        
         return nullptr;
     }
     Rid &rid() override { return rid_; }

@@ -40,6 +40,11 @@ class DeleteExecutor : public AbstractExecutor {
 
         for (Rid rid : rids_) 
         {          
+            //lab4
+            auto rec = fh_->get_record(rid,context_);
+            RmRecord deleted_rec = RmRecord(rec->size);
+            memcpy(deleted_rec.data,rec->data,rec->size);
+
             if (!fh_->is_record(rid)) // 无记录扫描下一条
             {  
                 continue;
@@ -50,6 +55,10 @@ class DeleteExecutor : public AbstractExecutor {
             }
             
             fh_->delete_record(rid, context_);
+
+            //lab4
+            WriteRecord* write_rec = new WriteRecord(WType::DELETE_TUPLE,tab_name_,rid,deleted_rec);
+            context_->txn_->append_write_record(write_rec);
         }
         return nullptr;
     }
